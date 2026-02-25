@@ -4,3 +4,4 @@ trimesh
 numpy
 python-multipart
 pydantic
+jinja2
