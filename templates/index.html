@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Manufacturing Platform</title>
+    <style>
+        body { font-family: Arial; padding: 40px; }
+        #viewer { width: 100%; height: 500px; border: 1px solid #ccc; margin-top: 20px; }
+    </style>
+</head>
+<body>
+
+<h1>Upload STL Files</h1>
+
+<form action="/upload" method="post" enctype="multipart/form-data">
+    <input type="file" name="files" accept=".stl" multiple required>
+    <br><br>
+    <button type="submit">Analyze</button>
+</form>
+
+<hr>
+
+<h2>Cost Calculation</h2>
+
+<form id="calcForm">
+    <input type="number" step="any" id="silicon_rate" placeholder="Silicon Rate" required><br><br>
+    <input type="number" step="any" id="part_rate" placeholder="Part Rate" required><br><br>
+    <input type="number" step="any" id="master_part" placeholder="Master Part" required><br><br>
+    <input type="number" step="any" id="boundary_spacing" placeholder="Boundary Spacing" required><br><br>
+    <input type="number" step="any" id="part_waste_gate" placeholder="Part Waste Gate" required><br><br>
+    <button type="submit">Calculate</button>
+</form>
+
+<div id="result"></div>
+
+<div id="viewer"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128/examples/js/loaders/STLLoader.js"></script>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+
+    let fileUrls = [];
+    {% if file_urls is defined %}
+        fileUrls = {{ file_urls | tojson }};
+    {% endif %}
+
+    const viewer = document.getElementById("viewer");
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x999999);
+
+    // Ambient light
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+
+    // Key light
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1);
+    keyLight.position.set(200, 300, 200);
+    keyLight.castShadow = true;
+    scene.add(keyLight);
+
+    // Fill light
+    const fillLight = new THREE.DirectionalLight(0xffffff, 0.4);
+    fillLight.position.set(-200, 100, -200);
+    scene.add(fillLight);
+
+    // Back light
+    const backLight = new THREE.DirectionalLight(0xffffff, 0.3);
+    backLight.position.set(0, 200, -300);
+    scene.add(backLight);
+
+    const camera = new THREE.PerspectiveCamera(60, viewer.clientWidth/500, 0.1, 100000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(viewer.clientWidth, 500);
+    viewer.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+    scene.add(new THREE.GridHelper(600, 60));
+    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+
+    const loader = new THREE.STLLoader();
+
+    let offsetX = 0;
+
+    fileUrls.forEach(url => {
+
+        // loader.load(url, function (geometry) {
+
+        // geometry.computeVertexNormals();
+        // geometry.normalizeNormals?.();
+
+        // const material = new THREE.MeshPhysicalMaterial({
+        // color: 0x3a86ff,
+        // metalness: 0.15,
+        // roughness: 0.45,
+        // clearcoat: 0.3,
+        // clearcoatRoughness: 0.2
+        // });
+
+        // const mesh = new THREE.Mesh(geometry, material);
+        // mesh.castShadow = true;
+        // mesh.receiveShadow = true;
+
+        // scene.add(mesh);
+
+        // // ---- CENTER IN X AND Z ----
+        // geometry.computeBoundingBox();
+        // const box = geometry.boundingBox;
+
+        // const center = new THREE.Vector3();
+        // box.getCenter(center);
+
+        // mesh.position.x -= center.x;
+        // mesh.position.z -= center.z;
+
+        // // ---- LIFT ABOVE GRID ----
+        // const size = new THREE.Vector3();
+        // box.getSize(size);
+
+        // const minY = box.min.y;
+
+        // const clearance = 20;  // 🔥 adjust this height
+
+        // mesh.position.y = -minY + clearance;
+
+        // // ---- CAMERA FIT ----
+        // const maxDim = Math.max(size.x, size.y, size.z);
+        // camera.position.set(maxDim * 1.5, maxDim, maxDim * 1.5);
+        // controls.target.set(0, size.y / 2, 0);
+        // controls.update();
+        // });
+
+        // });
+
+        const loader = new THREE.STLLoader();
+
+let currentOffset = 0;
+const spacing = 50;
+
+fileUrls.forEach((url) => {
+
+    loader.load(url, function (geometry) {
+
+        // geometry exists ONLY here
+
+        geometry.computeVertexNormals();
+        geometry.computeBoundingBox();
+
+        const material = new THREE.MeshPhysicalMaterial({
+            color: 0x3a86ff,
+            metalness: 0.2,
+            roughness: 0.5
+        });
+
+        const mesh = new THREE.Mesh(geometry, material);
+
+        // Center model
+        const box = geometry.boundingBox;
+        const center = new THREE.Vector3();
+        box.getCenter(center);
+
+        mesh.position.x -= center.x;
+        mesh.position.z -= center.z;
+
+        // Lift above grid
+        const minY = box.min.y;
+        const clearance = 20;
+        mesh.position.y = -minY + clearance;
+
+        // Compute size
+        const size = new THREE.Vector3();
+        box.getSize(size);
+
+        // Position beside previous object
+        mesh.position.x += currentOffset;
+
+        currentOffset += size.x + spacing;
+
+        scene.add(mesh);
+
+        // Adjust camera
+        camera.position.set(currentOffset, size.y * 1.5, currentOffset);
+        controls.target.set(currentOffset / 2, 0, 0);
+        controls.update();
+
+    });
+
+});
+    });
+    function animate() {
+        requestAnimationFrame(animate);
+        renderer.render(scene, camera);
+    }
+    animate();
+
+    // -------- Calculation --------
+    document.getElementById("calcForm").addEventListener("submit", async function(e){
+    e.preventDefault();
+
+    const data = {
+        silicon_rate: parseFloat(document.getElementById("silicon_rate").value),
+        part_rate: parseFloat(document.getElementById("part_rate").value),
+        master_part: parseFloat(document.getElementById("master_part").value),
+        boundary_spacing: parseFloat(document.getElementById("boundary_spacing").value),
+        part_waste_gate: parseFloat(document.getElementById("part_waste_gate").value)
+    };
+
+    try {
+        const response = await fetch("/calculate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+        console.log("Calculation Result:", result);
+
+        const resultDiv = document.getElementById("result");
+
+        if(result.error){
+            resultDiv.innerHTML = result.error;
+            return;
+        }
+
+        resultDiv.innerHTML = `
+             <h3>Calculation Results</h3>
+
+            X: ${result.x_dimension.toFixed(2)} <br>
+            Y: ${result.y_dimension.toFixed(2)} <br>
+            Z: ${result.z_dimension.toFixed(2)} <br>
+            Volume: ${result.volume.toFixed(2)} <br><br>
+
+            New X: ${result.new_X.toFixed(2)} <br>
+            New Y: ${result.new_Y.toFixed(2)} <br>
+            New Z: ${result.new_Z.toFixed(2)} <br><br>
+
+            Volume in CC: ${result.volume_in_cc.toFixed(2)} <br>
+            Weight: ${result.weight.toFixed(2)} <br><br>
+
+            Master Pattern Cost: ${result.master_pattern_cost.toFixed(2)} <br>
+            Silicon Mold Cost: ${result.mold_cost.toFixed(2)} <br>
+            Development Cost: ${result.development_cost.toFixed(2)} <br>
+            Part Cost: ${result.part_cost.toFixed(2)}
+        `;
+    }
+    catch(error){
+        console.error("Calculation Error:", error);
+    }
+});
+
+});
+</script>
+
+</body>
+</html>
